@@ -4,6 +4,54 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../colors.sh"
 
 BESU=./bin/besu
 
+wait_for_rpc() {
+    local node_name="$1"
+    local rpc_port="$2"
+    local attempts=60
+    local count=0
+
+    echo -e "${BLUE}Waiting for ${node_name} to be responsive...${NC}"
+    until curl -s -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' -H "Content-Type: application/json" "http://localhost:${rpc_port}/" > /dev/null 2>&1; do
+        printf '.'
+        sleep 2
+        count=$((count + 1))
+        if [ "$count" -ge "$attempts" ]; then
+            echo -e "\n${RED}${node_name} did not become responsive on port ${rpc_port}.${NC}"
+            docker logs --tail 50 "$node_name" || true
+            exit 1
+        fi
+    done
+    echo -e "\n${GREEN}${node_name} is responsive!${NC}\n"
+}
+
+wait_for_enode() {
+    local attempts=30
+    local count=0
+    local enode_response
+    local enode_url
+
+    echo -e "${BLUE}Waiting for besu.node-1 P2P to be ready...${NC}" >&2
+    while true; do
+        enode_response=$(curl -s -X POST --data '{"jsonrpc":"2.0","method":"net_enode","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8545/)
+        enode_url=$(echo "$enode_response" | jq -r '.result // empty')
+
+        if [[ "$enode_url" =~ ^enode:// ]]; then
+            echo "$enode_url"
+            return 0
+        fi
+
+        printf '.' >&2
+        sleep 2
+        count=$((count + 1))
+        if [ "$count" -ge "$attempts" ]; then
+            echo -e "\n${RED}Could not determine a valid enode URL from besu.node-1.${NC}" >&2
+            echo -e "${YELLOW}Last JSON-RPC response:${NC} $enode_response" >&2
+            docker logs --tail 50 besu.node-1 || true
+            exit 1
+        fi
+    done
+}
+
 mkdir tmp && cd tmp
 ../$BESU operator generate-blockchain-config --config-file=../minimal/config.json --to=network --private-key-file-name=key
 
@@ -53,19 +101,15 @@ docker run -d \
 
 echo
 
-echo -e "${BLUE}Waiting for besu.node-1 to be responsive...${NC}"
-until curl -s -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8545/ > /dev/null 2>&1; do
-    printf '.'
-    sleep 2
-done
-echo -e "\n${GREEN}besu.node-1 is responsive!${NC}\n"
+wait_for_rpc "besu.node-1" 8545
+ENODE_URL=$(wait_for_enode)
 
-ENODE_RESPONSE=$(curl -s -X POST --data '{"jsonrpc":"2.0","method":"net_enode","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8545/)
-ENODE_URL=$(echo $ENODE_RESPONSE | jq -r '.result')
-echo $ENODE_URL > minimal/bootnodes.txt
+printf '%s\n' "$ENODE_URL" > minimal/bootnodes.txt
 
 HOST_IP=$(docker container inspect besu.node-1 | jq -r '.[0].NetworkSettings.Networks.besu_test_network.IPAddress')
-sed -i.bak "s/127.0.0.1/$HOST_IP/g" minimal/bootnodes.txt
+sed -i.bak -E "s/(127\.0\.0\.1|0\.0\.0\.0)/$HOST_IP/g" minimal/bootnodes.txt
+
+BOOTNODE_URL=$(cat ./minimal/bootnodes.txt)
 
 echo -e "${BLUE}Starting besu.node-2 on docker...${NC}"
 docker run -d \
@@ -83,16 +127,11 @@ docker run -d \
     --network besu_test_network \
     --restart always \
     hyperledger/besu:25.4.1 \
-    --config-file=/opt/besu/config.toml --bootnodes=$(cat ./minimal/bootnodes.txt)
+    --config-file=/opt/besu/config.toml --bootnodes="$BOOTNODE_URL"
 
 echo
 
-echo -e "${BLUE}Waiting for besu.node-2 to be responsive...${NC}"
-until curl -s -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8547/ > /dev/null 2>&1; do
-    printf '.'
-    sleep 2
-done
-echo -e "\n${GREEN}besu.node-2 is responsive!${NC}\n"
+wait_for_rpc "besu.node-2" 8547
 
 echo -e "${BLUE}Starting besu.node-3 on docker...${NC}"
 docker run -d \
@@ -110,16 +149,11 @@ docker run -d \
     --network besu_test_network \
     --restart always \
     hyperledger/besu:25.4.1 \
-    --config-file=/opt/besu/config.toml --bootnodes=$(cat ./minimal/bootnodes.txt) 
+    --config-file=/opt/besu/config.toml --bootnodes="$BOOTNODE_URL"
 
 echo
 
-echo -e "${BLUE}Waiting for besu.node-3 to be responsive...${NC}"
-until curl -s -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8549/ > /dev/null 2>&1; do
-    printf '.'
-    sleep 2
-done
-echo -e "\n${GREEN}besu.node-3 is responsive!${NC}\n"
+wait_for_rpc "besu.node-3" 8549
 
 echo -e "${BLUE}Starting besu.node-4 on docker...${NC}"
 docker run -d \
@@ -137,16 +171,11 @@ docker run -d \
     --network besu_test_network \
     --restart always \
     hyperledger/besu:25.4.1 \
-    --config-file=/opt/besu/config.toml --bootnodes=$(cat ./minimal/bootnodes.txt)
+    --config-file=/opt/besu/config.toml --bootnodes="$BOOTNODE_URL"
 
 echo
 
-echo -e "${BLUE}Waiting for besu.node-4 to be responsive...${NC}"
-until curl -s -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' -H "Content-Type: application/json" http://localhost:8551/ > /dev/null 2>&1; do
-    printf '.'
-    sleep 2
-done
-echo -e "\n${GREEN}besu.node-4 is responsive!${NC}\n"
+wait_for_rpc "besu.node-4" 8551
 
 echo -e "${GREEN}============================="
 echo -e "Network started successfully!"

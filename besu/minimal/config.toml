@@ -6,13 +6,13 @@ p2p-host = "127.0.0.1"
 p2p-port = 30303
 
 rpc-http-enabled = true
-rpc-http-host = "127.0.0.1"
+rpc-http-host = "0.0.0.0"
 rpc-http-port = 8545
 rpc-http-api = ["ETH", "NET", "QBFT", "WEB3"]
 rpc-http-cors-origins = ["*"]
 
 rpc-ws-enabled = true
-rpc-ws-host = "127.0.0.1"
+rpc-ws-host = "0.0.0.0"
 rpc-ws-port = 8546
 rpc-ws-api = ["ETH", "NET", "QBFT", "WEB3"]
 
