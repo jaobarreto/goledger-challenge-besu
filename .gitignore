@@ -1,3 +1,7 @@
 # Misc
 .DS_Store
 tmp
+
+# Local environment and secrets
+.env
+app/.env
