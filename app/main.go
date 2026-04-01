@@ -1,47 +1,119 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math/big"
+	"net/http"
 
 	"goledger-challenge/blockchain"
+	"goledger-challenge/db"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
+// Estrutura para receber o JSON na rota SET
+type SetRequest struct {
+	Value int64 `json:"value" binding:"required"`
+}
+
 func main() {
-	if err := godotenv.Load(".env", "../SimpleStorage/.env"); err != nil {
-		log.Println("Aviso: nenhum arquivo .env encontrado em app/.env ou ../SimpleStorage/.env")
+	// 1. Carrega variáveis de ambiente
+	if err := godotenv.Load(); err != nil {
+		log.Println("Aviso: Nenhum arquivo .env encontrado")
 	}
 
-	fmt.Println("Conectando à Blockchain Besu...")
+	// 2. Inicializa o Banco de Dados
+	database, err := db.NewDB()
+	if err != nil {
+		log.Fatalf("Falha crítica no BD: %v", err)
+	}
+	log.Println("✅ Banco de Dados conectado!")
+
+	// 3. Inicializa o Cliente Blockchain
 	eth, err := blockchain.NewClient()
 	if err != nil {
-		log.Fatalf("Falha crítica ao conectar no Besu: %v", err)
+		log.Fatalf("Falha crítica na Blockchain: %v", err)
 	}
-	fmt.Println("Conectado ao nó do Besu com sucesso!")
+	log.Println("✅ Blockchain Besu conectada!")
 
-	// 1. Lê o valor atual
-	val, err := eth.GetValue()
-	if err != nil {
-		log.Fatalf("Erro ao ler valor inicial: %v", err)
-	}
-	fmt.Printf("Valor inicial no contrato: %s\n", val.String())
+	// 4. Configura o servidor web Gin
+	// gin.SetMode(gin.ReleaseMode) // Descomente para produção
+	router := gin.Default()
 
-	// 2. Grava um novo valor (ex: 50)
-	novoValor := big.NewInt(50)
-	fmt.Printf("Enviando transação para gravar o valor: %s\n", novoValor.String())
-	err = eth.SetValue(novoValor)
-	if err != nil {
-		log.Fatalf("Erro ao gravar valor: %v", err)
-	}
-	fmt.Println("Valor gravado e minerado com sucesso!")
+	// 1. SET: Grava um novo valor na Blockchain
+	router.POST("/set", func(c *gin.Context) {
+		var req SetRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido. Envie {'value': numero}"})
+			return
+		}
 
-	// 3. Lê o valor novamente para confirmar
-	valFinal, err := eth.GetValue()
-	if err != nil {
-		log.Fatalf("Erro ao ler valor final: %v", err)
+		bigVal := big.NewInt(req.Value)
+		if err := eth.SetValue(bigVal); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao gravar na blockchain: " + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Valor salvo e minerado na blockchain!", "value": req.Value})
+	})
+
+	// 2. GET: Lê o valor atual da Blockchain
+	router.GET("/get", func(c *gin.Context) {
+		val, err := eth.GetValue()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler da blockchain: " + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"chain_value": val.String()})
+	})
+
+	// 3. SYNC: Lê da Blockchain e salva no Banco de Dados
+	router.POST("/sync", func(c *gin.Context) {
+		val, err := eth.GetValue()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler da chain: " + err.Error()})
+			return
+		}
+
+		if err := database.SaveValue(val.String()); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao salvar no BD: " + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":      "Sincronização concluída com sucesso!",
+			"synced_value": val.String(),
+		})
+	})
+
+	// 4. CHECK: Compara a Blockchain com o Banco de Dados
+	router.GET("/check", func(c *gin.Context) {
+		chainVal, err := eth.GetValue()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler da chain"})
+			return
+		}
+
+		dbVal, err := database.GetSavedValue()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler do BD"})
+			return
+		}
+
+		isSynced := chainVal.String() == dbVal
+
+		c.JSON(http.StatusOK, gin.H{
+			"synced":      isSynced,
+			"chain_value": chainVal.String(),
+			"db_value":    dbVal,
+		})
+	})
+
+	// Inicia o servidor na porta 8080
+	log.Println("🚀 Servidor rodando na porta 8080...")
+	if err := router.Run(":8080"); err != nil {
+		log.Fatalf("Erro ao iniciar o servidor: %v", err)
 	}
-	fmt.Printf("Valor final confirmado no contrato: %s\n", valFinal.String())
 }
