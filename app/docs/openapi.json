@@ -1,0 +1,97 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GoLedger Challenge API",
+    "version": "1.0.0",
+    "description": "REST API for writing/reading SimpleStorage on Besu and syncing value to PostgreSQL"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080"
+    }
+  ],
+  "paths": {
+    "/set": {
+      "post": {
+        "summary": "Set a value on blockchain",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Value written to blockchain"
+          },
+          "400": {
+            "description": "Invalid JSON payload"
+          },
+          "500": {
+            "description": "Blockchain write error"
+          }
+        }
+      }
+    },
+    "/get": {
+      "get": {
+        "summary": "Get value from blockchain",
+        "responses": {
+          "200": {
+            "description": "Current chain value"
+          },
+          "500": {
+            "description": "Blockchain read error"
+          }
+        }
+      }
+    },
+    "/sync": {
+      "post": {
+        "summary": "Sync chain value to PostgreSQL",
+        "responses": {
+          "200": {
+            "description": "Synchronized successfully"
+          },
+          "500": {
+            "description": "Blockchain or database error"
+          }
+        }
+      }
+    },
+    "/check": {
+      "get": {
+        "summary": "Compare blockchain and database values",
+        "responses": {
+          "200": {
+            "description": "Comparison result"
+          },
+          "500": {
+            "description": "Blockchain or database error"
+          }
+        }
+      }
+    },
+    "/swagger": {
+      "get": {
+        "summary": "Swagger UI page",
+        "responses": {
+          "200": {
+            "description": "Swagger UI"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,23 @@
-version: '3.8'
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      DB_URL: postgres://${DB_USER:-admin}:${DB_PASSWORD:-password}@db:5432/${DB_NAME:-goledger_db}?sslmode=disable
+      RPC_URL: ${RPC_URL_DOCKER:-http://host.docker.internal:8547}
+      CONTRACT_ARTIFACT_PATH: /app/SimpleStorage/out/SimpleStorage.sol/SimpleStorage.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../SimpleStorage/out:/app/SimpleStorage/out:ro
+    ports:
+      - "8080:8080"
+
   db:
     image: postgres:15
     environment:

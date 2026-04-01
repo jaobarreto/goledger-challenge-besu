@@ -30,6 +30,18 @@ type FoundryArtifact struct {
 func NewClient() (*Client, error) {
 	rpcURL := os.Getenv("RPC_URL")
 	contractAddr := os.Getenv("CONTRACT_ADDRESS")
+	artifactPath := os.Getenv("CONTRACT_ARTIFACT_PATH")
+	if artifactPath == "" {
+		artifactPath = "../SimpleStorage/out/SimpleStorage.sol/SimpleStorage.json"
+	}
+
+	if rpcURL == "" {
+		return nil, fmt.Errorf("RPC_URL não definida")
+	}
+
+	if contractAddr == "" {
+		return nil, fmt.Errorf("CONTRACT_ADDRESS não definida")
+	}
 
 	// 1. Conecta no nó do Besu
 	client, err := ethclient.DialContext(context.Background(), rpcURL)
@@ -38,7 +50,7 @@ func NewClient() (*Client, error) {
 	}
 
 	// 2. Lê o arquivo do contrato compilado
-	artifactData, err := os.ReadFile("../SimpleStorage/out/SimpleStorage.sol/SimpleStorage.json")
+	artifactData, err := os.ReadFile(artifactPath)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao ler arquivo do contrato: %w", err)
 	}
